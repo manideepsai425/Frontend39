@@ -4,13 +4,13 @@ function getRiskLevel(spoilageRisk) {
   if (spoilageRisk === undefined || spoilageRisk === null) return null
   const val = typeof spoilageRisk === 'string' ? spoilageRisk.toLowerCase() : ''
   if (typeof spoilageRisk === 'number') {
-    if (spoilageRisk >= 70) return { level: 'high', label: 'High Risk', color: 'risk-high' }
+    if (spoilageRisk >= 70) return { level: 'high',   label: 'High Risk',   color: 'risk-high' }
     if (spoilageRisk >= 40) return { level: 'medium', label: 'Medium Risk', color: 'risk-medium' }
     return { level: 'low', label: 'Low Risk', color: 'risk-low' }
   }
-  if (val.includes('high')) return { level: 'high', label: 'High Risk', color: 'risk-high' }
+  if (val.includes('high'))                         return { level: 'high',   label: 'High Risk',   color: 'risk-high' }
   if (val.includes('medium') || val.includes('moderate')) return { level: 'medium', label: 'Medium Risk', color: 'risk-medium' }
-  if (val.includes('low')) return { level: 'low', label: 'Low Risk', color: 'risk-low' }
+  if (val.includes('low'))                          return { level: 'low',    label: 'Low Risk',    color: 'risk-low' }
   return { level: 'unknown', label: String(spoilageRisk), color: 'risk-low' }
 }
 
@@ -18,8 +18,8 @@ function getGapSentiment(gap) {
   if (gap === undefined || gap === null) return null
   const val = typeof gap === 'number' ? gap : parseFloat(gap)
   if (isNaN(val)) return { label: String(gap), color: 'gap-neutral', icon: '↔' }
-  if (val > 0) return { label: `+${val.toLocaleString()}`, color: 'gap-surplus', icon: '▲', note: 'Surplus' }
-  if (val < 0) return { label: val.toLocaleString(), color: 'gap-deficit', icon: '▼', note: 'Deficit' }
+  if (val > 0)  return { label: `+${val.toLocaleString()}`, color: 'gap-surplus', icon: '▲', note: 'Surplus' }
+  if (val < 0)  return { label: val.toLocaleString(),       color: 'gap-deficit', icon: '▼', note: 'Deficit' }
   return { label: '0', color: 'gap-neutral', icon: '↔', note: 'Balanced' }
 }
 
@@ -46,9 +46,15 @@ export default function Results({ data, error, inputParams }) {
 
   if (!data) return null
 
-  const risk = getRiskLevel(data.spoilage_risk ?? data.spoilageRisk)
-  const gap = getGapSentiment(data.supply_demand_gap ?? data.supplyDemandGap ?? data.gap)
-  const demand = data.predicted_demand ?? data.predictedDemand ?? data.demand
+  // ✅ Correct field names matching backend PredictionResponse schema
+  const demand  = data.predicted_demand
+  const gapVal  = data.predicted_supply_gap
+  const riskRaw = data.spoilage_risk_label        // "HIGH RISK" or "LOW RISK"
+  const riskPct = data.spoilage_risk_probability  // e.g. 73.42 (already %)
+  const alert   = data.alert
+
+  const risk = getRiskLevel(riskPct ?? riskRaw)
+  const gap  = getGapSentiment(gapVal)
 
   return (
     <div className="results-area">
@@ -57,10 +63,17 @@ export default function Results({ data, error, inputParams }) {
         {inputParams && (
           <p className="results-meta">
             {inputParams.crop} · {inputParams.region} · {inputParams.season} ·{' '}
-            {inputParams.temperature}°C · {inputParams.rainfall}mm
+            {inputParams.weather_temp}°C · {inputParams.rainfall_mm}mm
           </p>
         )}
       </div>
+
+      {/* Alert banner */}
+      {alert && (
+        <div className="alert-banner">
+          {alert}
+        </div>
+      )}
 
       <div className="results-grid">
         {/* Predicted Demand */}
@@ -107,7 +120,10 @@ export default function Results({ data, error, inputParams }) {
           </div>
           <div className="card-content">
             <p className="card-label">Spoilage Risk</p>
-            <p className="card-value">{risk ? risk.label : formatValue(data.spoilage_risk ?? data.spoilageRisk)}</p>
+            <p className="card-value">{risk ? risk.label : riskRaw}</p>
+            {riskPct !== undefined && (
+              <p className="card-badge">{riskPct.toFixed(1)}% probability</p>
+            )}
             <p className="card-desc">Likelihood of crop spoilage based on environmental factors.</p>
           </div>
           {risk?.level && (
@@ -120,13 +136,11 @@ export default function Results({ data, error, inputParams }) {
         </div>
       </div>
 
-      {/* Raw JSON for any extra fields */}
-      {Object.keys(data).filter(k => !['predicted_demand','predictedDemand','demand','supply_demand_gap','supplyDemandGap','gap','spoilage_risk','spoilageRisk'].includes(k)).length > 0 && (
-        <details className="raw-response">
-          <summary>View full API response</summary>
-          <pre>{JSON.stringify(data, null, 2)}</pre>
-        </details>
-      )}
+      {/* Full API response */}
+      <details className="raw-response">
+        <summary>View full API response</summary>
+        <pre>{JSON.stringify(data, null, 2)}</pre>
+      </details>
     </div>
   )
 }
