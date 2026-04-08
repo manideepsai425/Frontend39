@@ -1,112 +1,134 @@
-import React, { useState } from 'react'
-import Form from './components/Form'
-import Results from './components/Results'
-import { predictSupplyChain } from './api'
+import React, { useState, useEffect, useRef } from 'react';
+import Form from './components/Form';
+import Results from './components/Results';
+import { predictSupplyChain } from './api';
 
 export default function App() {
-  const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState(null)
-  const [error, setError] = useState(null)
-  const [lastInput, setLastInput] = useState(null)
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState(null);
+  const [lastInput, setLastInput] = useState(null);
+
+  const resultsRef = useRef(null);
+
+  // Auto-scroll to results when they appear
+  useEffect(() => {
+    if ((results || error) && !loading && resultsRef.current) {
+      setTimeout(() => {
+        resultsRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 300); // Small delay for better UX after loading finishes
+    }
+  }, [results, error, loading]);
 
   const handleSubmit = async (formData) => {
-    setLoading(true)
-    setError(null)
-    setResults(null)
-    setLastInput(formData)
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    setLastInput(formData);
 
     try {
-      const res = await predictSupplyChain(formData)
-      setResults(res.data)
+      const res = await predictSupplyChain(formData);
+      setResults(res.data);
     } catch (err) {
       if (err.response) {
-        const detail = err.response.data?.detail || err.response.data?.message || JSON.stringify(err.response.data)
-        setError(`Server error ${err.response.status}: ${detail}`)
+        const detail = err.response.data?.detail || 
+                      err.response.data?.message || 
+                      JSON.stringify(err.response.data);
+        setError(`Server error ${err.response.status}: ${detail}`);
       } else if (err.code === 'ECONNABORTED') {
-        setError('Request timed out. The server may be waking up (cold start). Please try again in a moment.')
+        setError('Request timed out. The server may be waking up (cold start). Please try again.');
       } else if (err.request) {
-        setError('No response from server. Please check your connection or try again later.')
+        setError('No response from server. Please check your connection.');
       } else {
-        setError(err.message)
+        setError(err.message);
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="app-root">
-      {/* Decorative background elements */}
+      {/* Background Elements */}
       <div className="bg-grain" />
       <div className="bg-circle bg-circle-1" />
       <div className="bg-circle bg-circle-2" />
 
-      {/* Header */}
+      {/* Header - iPhone App Style */}
       <header className="app-header">
         <div className="header-inner">
           <div className="logo">
             <span className="logo-icon">🌾</span>
             <span className="logo-text">HarvestIQ</span>
           </div>
-          <nav className="header-nav">
-            <span className="nav-pill">Food Supply Chain Intelligence</span>
-          </nav>
+          <div className="nav-pill">AI Supply Chain Intelligence</div>
         </div>
       </header>
 
-      {/* Hero */}
+      {/* Hero Section */}
       <section className="hero">
         <div className="hero-inner">
-          <p className="hero-eyebrow">Powered by AI</p>
+          <p className="hero-eyebrow">POWERED BY AI • REAL-TIME INSIGHTS</p>
           <h1 className="hero-title">
-            Predict. Analyse.<br />
-            <em>Optimise.</em>
+            Predict.<br />
+            Analyse.<br />
+            <span className="highlight">Optimise.</span>
           </h1>
           <p className="hero-desc">
-            Enter your crop parameters and get real-time predictions on demand, supply gaps,
-            and spoilage risk — helping you make smarter distribution decisions.
+            Enter crop &amp; market parameters to get instant predictions on demand, 
+            supply gaps, and spoilage risk.
           </p>
         </div>
       </section>
 
-      {/* Main content */}
+      {/* Main Content - Card-like Container */}
       <main className="main-content">
-        <div className="content-grid">
+        <div className="content-container">
           <div className="form-column">
             <Form onSubmit={handleSubmit} loading={loading} />
           </div>
-          <div className="results-column">
+
+          {/* Results Section with Ref for Auto-scroll */}
+          <div ref={resultsRef} className="results-column">
             {!results && !error && !loading && (
               <div className="empty-state">
-                <div className="empty-icon">🔍</div>
-                <p className="empty-title">No results yet</p>
-                <p className="empty-desc">Fill in the form and click <strong>Run Analysis</strong> to see predictions.</p>
-                <ul className="empty-hints">
-                  <li>📦 <strong>Demand</strong> — estimated market need</li>
-                  <li>⚖️ <strong>Supply Gap</strong> — surplus or deficit</li>
-                  <li>🔴 <strong>Spoilage Risk</strong> — environmental risk level</li>
-                </ul>
+                <div className="empty-icon">🌱</div>
+                <p className="empty-title">Ready for Analysis</p>
+                <p className="empty-desc">
+                  Fill the form on the left and tap <strong>Run Analysis</strong><br />
+                  to unlock powerful AI predictions.
+                </p>
               </div>
             )}
+
             {loading && (
               <div className="loading-state">
                 <div className="loading-animation">
                   <div className="pulse-ring" />
                   <span className="loading-icon">🌾</span>
                 </div>
-                <p className="loading-title">Analysing supply chain…</p>
-                <p className="loading-desc">Running AI model on your parameters</p>
+                <p className="loading-title">Analysing Your Supply Chain</p>
+                <p className="loading-desc">AI model is processing your data...</p>
               </div>
             )}
-            <Results data={results} error={error} inputParams={lastInput} />
+
+            <Results 
+              data={results} 
+              error={error} 
+              inputParams={lastInput} 
+            />
           </div>
         </div>
       </main>
 
       {/* Footer */}
       <footer className="app-footer">
-        <p>HarvestIQ &mdash; Food Supply Chain AI &nbsp;·&nbsp; Built with FastAPI + React</p>
+        <p>HarvestIQ — Intelligent Food Supply Chain AI</p>
+        <p className="footer-tech">Built with FastAPI + React • Designed for Farmers &amp; Distributors</p>
       </footer>
     </div>
-  )
+  );
 }
