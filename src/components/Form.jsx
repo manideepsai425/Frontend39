@@ -1,106 +1,72 @@
 import React, { useState, useEffect } from 'react'
-import { getOptions } from '../api'
+import { fetchOptions } from '../api'
 
-// ─── Fallback options if /options endpoint fails ───────────────────────────
-const FALLBACK_CROPS   = ['Rice','Potato','Turmeric','Tomato','Brinjal','Cabbage','Onion','Chilli','Maize','Wheat']
-const FALLBACK_REGIONS = ['Andhra Pradesh','Telangana','Maharashtra','Tamil Nadu','Karnataka']
-const FALLBACK_SEASONS = ['Summer','Kharif','Rabi']
-
-const defaultForm = {
-  // Categoricals
-  crop:   '',
-  region: '',
-  season: '',
-  // Date-derived
-  month:       '',
-  day_of_week: '',
-  is_weekend:  '0',
-  // Weather
-  weather_temp: '',
-  rainfall_mm:  '',
-  humidity_pct: '',
-  // Flags
-  festival_flag: '0',
-  holiday_flag:  '0',
-  // Economics
-  price_per_quintal: '',
-  fuel_price:        '',
-  transport_cost:    '',
-  crop_yield:        '',
-  // Product
-  shelf_life_days: '',
-  market_arrival:  '',
-  // Lag features
-  demand_lag_1:    '',
-  demand_lag_7:    '',
-  avg_7day_demand:  '',
-  avg_30day_demand: '',
+// ── Per-crop smart defaults (mirrors backend CROP_DEFAULTS) ──
+const CROP_DEFAULTS = {
+  Brinjal:  { shelf_life_days: 5,   price_per_quintal: 10056 },
+  Cabbage:  { shelf_life_days: 7,   price_per_quintal: 12229 },
+  Chilli:   { shelf_life_days: 180, price_per_quintal: 12567 },
+  Maize:    { shelf_life_days: 180, price_per_quintal: 12734 },
+  Onion:    { shelf_life_days: 30,  price_per_quintal: 11160 },
+  Potato:   { shelf_life_days: 60,  price_per_quintal: 12959 },
+  Rice:     { shelf_life_days: 365, price_per_quintal: 11931 },
+  Tomato:   { shelf_life_days: 5,   price_per_quintal: 10805 },
+  Turmeric: { shelf_life_days: 365, price_per_quintal: 11400 },
+  Wheat:    { shelf_life_days: 365, price_per_quintal: 18438 },
 }
 
-export default function Form({ onSubmit, loading }) {
-  const [form,    setForm]    = useState(defaultForm)
-  const [errors,  setErrors]  = useState({})
-  const [options, setOptions] = useState({
-    crops:   FALLBACK_CROPS,
-    regions: FALLBACK_REGIONS,
-    seasons: FALLBACK_SEASONS,
-  })
+const today = new Date()
+const DEFAULT_FORM = {
+  crop: '', region: '', season: '',
+  weather_temp: '', rainfall_mm: '', humidity_pct: '58',
+  month: String(today.getMonth() + 1),
+  day_of_week: String(today.getDay()),
+  is_weekend: String(today.getDay() >= 6 ? 1 : 0),
+  festival_flag: '0', holiday_flag: '0',
+  price_per_quintal: '', fuel_price: '98.6',
+  transport_cost: '409.6', crop_yield: '3878',
+  shelf_life_days: '', market_arrival: '136.8',
+  demand_lag_1: '1342', demand_lag_7: '1342',
+  avg_7day_demand: '1342', avg_30day_demand: '1342',
+}
 
-  // Fetch live options from backend on mount
+const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+export default function Form({ onSubmit, loading }) {
+  const [form, setForm]       = useState(DEFAULT_FORM)
+  const [errors, setErrors]   = useState({})
+  const [options, setOptions] = useState({ crops: [], regions: [], seasons: [] })
+  const [optErr, setOptErr]   = useState(false)
+
   useEffect(() => {
-    getOptions()
-      .then(res => {
-        if (res.data?.crops && res.data?.regions && res.data?.seasons) {
-          setOptions(res.data)
-        }
-      })
+    fetchOptions()
+      .then(r => setOptions(r.data))
       .catch(() => {
-        // Silently fall back to hardcoded values
+        setOptErr(true)
+        setOptions({
+          crops:   ['Brinjal','Cabbage','Chilli','Maize','Onion','Potato','Rice','Tomato','Turmeric','Wheat'],
+          regions: ['Andhra Pradesh','Karnataka','Maharashtra','Tamil Nadu','Telangana'],
+          seasons: ['Kharif','Rabi','Summer'],
+        })
       })
   }, [])
 
-  // Auto-derive is_weekend from day_of_week
   useEffect(() => {
-    const d = parseInt(form.day_of_week)
-    if (!isNaN(d)) {
-      setForm(f => ({ ...f, is_weekend: (d === 5 || d === 6) ? '1' : '0' }))
+    if (form.crop && CROP_DEFAULTS[form.crop]) {
+      const d = CROP_DEFAULTS[form.crop]
+      setForm(f => ({
+        ...f,
+        shelf_life_days:   String(d.shelf_life_days),
+        price_per_quintal: String(d.price_per_quintal),
+      }))
     }
+  }, [form.crop])
+
+  useEffect(() => {
+    const dow = parseInt(form.day_of_week)
+    if (!isNaN(dow)) setForm(f => ({ ...f, is_weekend: String(dow >= 5 ? 1 : 0) }))
   }, [form.day_of_week])
-
-  const validate = () => {
-    const e = {}
-    const req = (key, label) => {
-      if (form[key] === '' || form[key] === null || form[key] === undefined)
-        e[key] = `${label} is required`
-    }
-    const num = (key, label, min, max) => {
-      const v = Number(form[key])
-      if (form[key] === '') { e[key] = `${label} is required`; return }
-      if (isNaN(v) || v < min || v > max)
-        e[key] = `${label} must be between ${min} and ${max}`
-    }
-
-    req('crop',   'Crop')
-    req('region', 'Region')
-    req('season', 'Season')
-
-    num('month',       'Month',         1,  12)
-    num('day_of_week', 'Day of week',   0,   6)
-    num('weather_temp','Temperature', -10,  50)
-    num('rainfall_mm', 'Rainfall',      0, 500)
-    num('humidity_pct','Humidity',      0, 100)
-    num('price_per_quintal', 'Price per quintal', 100, 100000)
-    num('fuel_price',        'Fuel price',          50,  500)
-    num('transport_cost',    'Transport cost',       50, 5000)
-    num('crop_yield',        'Crop yield',          100, 10000)
-    num('shelf_life_days',   'Shelf life',            1,  365)
-    num('market_arrival',    'Market arrival',        0, 10000)
-    num('demand_lag_1',      'Demand lag 1',          0, 10000)
-    num('demand_lag_7',      'Demand lag 7',          0, 10000)
-    num('avg_7day_demand',   '7-day avg demand',      0, 10000)
-    num('avg_30day_demand',  '30-day avg demand',     0, 10000)
-    return e
-  }
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -108,90 +74,83 @@ export default function Form({ onSubmit, loading }) {
     if (errors[name]) setErrors(err => ({ ...err, [name]: '' }))
   }
 
+  const validate = () => {
+    const e = {}
+    if (!form.crop)   e.crop   = 'Required'
+    if (!form.region) e.region = 'Required'
+    if (!form.season) e.season = 'Required'
+    if (form.weather_temp === '' || isNaN(form.weather_temp)) e.weather_temp = 'Required (°C)'
+    if (form.rainfall_mm  === '' || isNaN(form.rainfall_mm))  e.rainfall_mm  = 'Required (mm)'
+    if (form.humidity_pct === '' || isNaN(form.humidity_pct)) e.humidity_pct = 'Required (%)'
+    if (form.price_per_quintal === '' || isNaN(form.price_per_quintal)) e.price_per_quintal = 'Required'
+    if (form.shelf_life_days   === '' || isNaN(form.shelf_life_days))   e.shelf_life_days   = 'Required'
+    return e
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     const errs = validate()
     if (Object.keys(errs).length) { setErrors(errs); return }
-
+    const num = (v, fb = 0) => v === '' ? fb : parseFloat(v)
+    const int = (v, fb = 0) => v === '' ? fb : parseInt(v)
     onSubmit({
-      crop:   form.crop,
-      region: form.region,
-      season: form.season,
-
-      month:       parseInt(form.month),
-      day_of_week: parseInt(form.day_of_week),
-      is_weekend:  parseInt(form.is_weekend),
-
-      weather_temp: parseFloat(form.weather_temp),
-      rainfall_mm:  parseFloat(form.rainfall_mm),
-      humidity_pct: parseFloat(form.humidity_pct),
-
-      festival_flag: parseInt(form.festival_flag),
-      holiday_flag:  parseInt(form.holiday_flag),
-
-      price_per_quintal: parseFloat(form.price_per_quintal),
-      fuel_price:        parseFloat(form.fuel_price),
-      transport_cost:    parseFloat(form.transport_cost),
-      crop_yield:        parseInt(form.crop_yield),
-
-      shelf_life_days: parseInt(form.shelf_life_days),
-      market_arrival:  parseFloat(form.market_arrival),
-
-      demand_lag_1:    parseFloat(form.demand_lag_1),
-      demand_lag_7:    parseFloat(form.demand_lag_7),
-      avg_7day_demand:  parseFloat(form.avg_7day_demand),
-      avg_30day_demand: parseFloat(form.avg_30day_demand),
+      crop: form.crop, region: form.region, season: form.season,
+      weather_temp:      num(form.weather_temp),
+      rainfall_mm:       num(form.rainfall_mm),
+      humidity_pct:      num(form.humidity_pct, 58),
+      month:             int(form.month, today.getMonth() + 1),
+      day_of_week:       int(form.day_of_week, today.getDay()),
+      is_weekend:        int(form.is_weekend, 0),
+      festival_flag:     int(form.festival_flag, 0),
+      holiday_flag:      int(form.holiday_flag, 0),
+      price_per_quintal: num(form.price_per_quintal, 12000),
+      fuel_price:        num(form.fuel_price, 98.6),
+      transport_cost:    num(form.transport_cost, 409.6),
+      crop_yield:        int(form.crop_yield, 3878),
+      shelf_life_days:   int(form.shelf_life_days, 30),
+      market_arrival:    num(form.market_arrival, 136.8),
+      demand_lag_1:      num(form.demand_lag_1, 1342),
+      demand_lag_7:      num(form.demand_lag_7, 1342),
+      avg_7day_demand:   num(form.avg_7day_demand, 1342),
+      avg_30day_demand:  num(form.avg_30day_demand, 1342),
     })
   }
 
-  const handleReset = () => { setForm(defaultForm); setErrors({}) }
+  const handleReset = () => { setForm(DEFAULT_FORM); setErrors({}) }
 
-  const field = (key, label, icon, placeholder, type = 'number', extraProps = {}) => (
-    <div className={`form-group ${errors[key] ? 'has-error' : ''}`}>
-      <label htmlFor={key}>
-        <span className="label-icon">{icon}</span> {label}
-      </label>
+  const Field = ({ name, label, icon, unit = '', placeholder = '' }) => (
+    <div className={`form-group ${errors[name] ? 'has-error' : ''}`}>
+      <label htmlFor={name}><span className="label-icon">{icon}</span>{label}</label>
       <div className="input-wrapper">
-        <input
-          type={type}
-          id={key}
-          name={key}
-          value={form[key]}
-          onChange={handleChange}
-          placeholder={placeholder}
-          disabled={loading}
-          {...extraProps}
-        />
+        <input type="number" id={name} name={name} value={form[name]}
+          onChange={handleChange} placeholder={placeholder}
+          disabled={loading} step="any" />
+        {unit && <span className="input-unit">{unit}</span>}
       </div>
-      {errors[key] && <span className="error-msg">{errors[key]}</span>}
+      {errors[name] && <span className="error-msg">{errors[name]}</span>}
     </div>
   )
 
-  const select = (key, label, icon, optionsList) => (
-    <div className={`form-group ${errors[key] ? 'has-error' : ''}`}>
-      <label htmlFor={key}>
-        <span className="label-icon">{icon}</span> {label}
-      </label>
+  const Select = ({ name, label, icon, opts }) => (
+    <div className={`form-group ${errors[name] ? 'has-error' : ''}`}>
+      <label htmlFor={name}><span className="label-icon">{icon}</span>{label}</label>
       <div className="select-wrapper">
-        <select id={key} name={key} value={form[key]} onChange={handleChange} disabled={loading}>
-          <option value="">Select {label.toLowerCase()}…</option>
-          {optionsList.map(o => <option key={o} value={o}>{o}</option>)}
+        <select id={name} name={name} value={form[name]} onChange={handleChange} disabled={loading}>
+          <option value="">Select…</option>
+          {opts.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
         <span className="select-arrow">▾</span>
       </div>
-      {errors[key] && <span className="error-msg">{errors[key]}</span>}
+      {errors[name] && <span className="error-msg">{errors[name]}</span>}
     </div>
   )
 
-  const toggle = (key, label, icon) => (
+  const SelectRaw = ({ name, label, icon, children }) => (
     <div className="form-group">
-      <label htmlFor={key}>
-        <span className="label-icon">{icon}</span> {label}
-      </label>
+      <label htmlFor={name}><span className="label-icon">{icon}</span>{label}</label>
       <div className="select-wrapper">
-        <select id={key} name={key} value={form[key]} onChange={handleChange} disabled={loading}>
-          <option value="0">No</option>
-          <option value="1">Yes</option>
+        <select id={name} name={name} value={form[name]} onChange={handleChange} disabled={loading}>
+          {children}
         </select>
         <span className="select-arrow">▾</span>
       </div>
@@ -203,81 +162,95 @@ export default function Form({ onSubmit, loading }) {
       <div className="form-header">
         <span className="form-tag">Supply Chain Model</span>
         <h2 className="form-title">Run Prediction</h2>
-        <p className="form-subtitle">Enter crop and environmental parameters to get AI-driven supply chain insights.</p>
+        <p className="form-subtitle">
+          Fields marked <span className="req-badge">required</span> must be filled. All others are pre-filled with real dataset averages.
+        </p>
+        {optErr && <p className="options-warn">⚠️ Backend offline — using built-in defaults.</p>}
       </div>
 
-      {/* ── Section 1: Crop Info ── */}
-      <p className="form-section-label">🌱 Crop Info</p>
-      <div className="form-grid">
-        {select('crop',   'Crop',   '🌾', options.crops)}
-        {select('region', 'Region', '📍', options.regions)}
-        {select('season', 'Season', '🌦️', options.seasons)}
+      {/* Section 1 */}
+      <div className="form-section">
+        <p className="section-label">🌾 Crop Information <span className="req-badge">required</span></p>
+        <div className="form-grid-3">
+          <Select name="crop"   label="Crop"   icon="🌱" opts={options.crops} />
+          <Select name="region" label="Region" icon="📍" opts={options.regions} />
+          <Select name="season" label="Season" icon="🌦️" opts={options.seasons} />
+        </div>
       </div>
 
-      {/* ── Section 2: Date ── */}
-      <p className="form-section-label">📅 Date</p>
-      <div className="form-grid">
-        {field('month',       'Month',       '🗓️', 'e.g. 8',  'number', { min:1, max:12 })}
-        {field('day_of_week', 'Day of Week', '📆', '0=Mon … 6=Sun', 'number', { min:0, max:6 })}
-        {toggle('is_weekend', 'Is Weekend', '🛌')}
+      {/* Section 2 */}
+      <div className="form-section">
+        <p className="section-label">🌡️ Weather Conditions <span className="req-badge">required</span></p>
+        <div className="form-grid-3">
+          <Field name="weather_temp" label="Temperature" icon="🌡️" unit="°C" placeholder="e.g. 32" />
+          <Field name="rainfall_mm"  label="Rainfall"    icon="🌧️" unit="mm" placeholder="e.g. 57" />
+          <Field name="humidity_pct" label="Humidity"    icon="💧" unit="%"  placeholder="e.g. 58" />
+        </div>
       </div>
 
-      {/* ── Section 3: Weather ── */}
-      <p className="form-section-label">☁️ Weather</p>
-      <div className="form-grid">
-        {field('weather_temp', 'Temperature (°C)', '🌡️', 'e.g. 32')}
-        {field('rainfall_mm',  'Rainfall (mm)',    '🌧️', 'e.g. 45')}
-        {field('humidity_pct', 'Humidity (%)',     '💧', 'e.g. 68')}
+      {/* Section 3 */}
+      <div className="form-section">
+        <p className="section-label">📅 Date Context <span className="opt-badge">auto-filled</span></p>
+        <div className="form-grid-3">
+          <SelectRaw name="month" label="Month" icon="📆">
+            {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+          </SelectRaw>
+          <SelectRaw name="day_of_week" label="Day of Week" icon="📅">
+            {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+          </SelectRaw>
+          <SelectRaw name="is_weekend" label="Weekend?" icon="🗓️">
+            <option value="0">No (Weekday)</option>
+            <option value="1">Yes (Weekend)</option>
+          </SelectRaw>
+        </div>
       </div>
 
-      {/* ── Section 4: Flags ── */}
-      <p className="form-section-label">🚩 Flags</p>
-      <div className="form-grid">
-        {toggle('festival_flag', 'Festival Day', '🎉')}
-        {toggle('holiday_flag',  'Holiday',      '🏖️')}
+      {/* Section 4 */}
+      <div className="form-section">
+        <p className="section-label">📦 Market & Logistics <span className="opt-badge">auto-filled from crop</span></p>
+        <div className="form-grid-3">
+          <Field name="price_per_quintal" label="Price / Quintal" icon="💰" unit="₹"    placeholder="e.g. 12000" />
+          <Field name="market_arrival"    label="Market Arrival"  icon="🚚" unit="tons" placeholder="e.g. 136" />
+          <Field name="crop_yield"        label="Crop Yield"      icon="🌿" unit="kg"   placeholder="e.g. 3878" />
+          <Field name="shelf_life_days"   label="Shelf Life"      icon="📦" unit="days" placeholder="e.g. 30" />
+          <Field name="transport_cost"    label="Transport Cost"  icon="🛻" unit="₹"    placeholder="e.g. 409" />
+          <Field name="fuel_price"        label="Fuel Price"      icon="⛽" unit="₹/L"  placeholder="e.g. 98" />
+        </div>
       </div>
 
-      {/* ── Section 5: Economics ── */}
-      <p className="form-section-label">💰 Economics</p>
-      <div className="form-grid">
-        {field('price_per_quintal', 'Price / Quintal (₹)', '💵', 'e.g. 12000')}
-        {field('fuel_price',        'Fuel Price (₹/L)',    '⛽', 'e.g. 100')}
-        {field('transport_cost',    'Transport Cost (₹)',  '🚚', 'e.g. 400')}
-        {field('crop_yield',        'Crop Yield (kg/ha)',  '🌿', 'e.g. 2500')}
+      {/* Section 5 */}
+      <div className="form-section">
+        <p className="section-label">🎌 Event Flags <span className="opt-badge">auto-filled</span></p>
+        <div className="form-grid-2">
+          <SelectRaw name="festival_flag" label="Festival Day?" icon="🪔">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </SelectRaw>
+          <SelectRaw name="holiday_flag" label="Public Holiday?" icon="🏖️">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </SelectRaw>
+        </div>
       </div>
 
-      {/* ── Section 6: Supply ── */}
-      <p className="form-section-label">📦 Supply</p>
-      <div className="form-grid">
-        {field('shelf_life_days', 'Shelf Life (days)',      '🗃️', 'e.g. 30')}
-        {field('market_arrival',  'Market Arrival (units)', '🏪', 'e.g. 500')}
-      </div>
-
-      {/* ── Section 7: Demand History ── */}
-      <p className="form-section-label">📊 Demand History</p>
-      <div className="form-grid">
-        {field('demand_lag_1',    'Demand Yesterday',     '📉', 'e.g. 1200')}
-        {field('demand_lag_7',    'Demand 7 Days Ago',    '📉', 'e.g. 1100')}
-        {field('avg_7day_demand', '7-Day Avg Demand',     '📈', 'e.g. 1150')}
-        {field('avg_30day_demand','30-Day Avg Demand',    '📈', 'e.g. 1080')}
+      {/* Section 6 */}
+      <div className="form-section">
+        <p className="section-label">📊 Demand History <span className="opt-badge">auto-filled</span></p>
+        <div className="form-grid-2">
+          <Field name="demand_lag_1"    label="Yesterday's Demand" icon="📉" unit="units" placeholder="e.g. 1342" />
+          <Field name="demand_lag_7"    label="7-day Lag Demand"   icon="📅" unit="units" placeholder="e.g. 1342" />
+          <Field name="avg_7day_demand" label="7-day Avg Demand"   icon="📈" unit="units" placeholder="e.g. 1342" />
+          <Field name="avg_30day_demand"label="30-day Avg Demand"  icon="📊" unit="units" placeholder="e.g. 1342" />
+        </div>
       </div>
 
       <div className="form-actions">
-        <button type="button" className="btn-reset" onClick={handleReset} disabled={loading}>
-          Clear
-        </button>
+        <button type="button" className="btn-reset" onClick={handleReset} disabled={loading}>Clear</button>
         <button type="submit" className="btn-submit" disabled={loading}>
-          {loading ? (
-            <span className="btn-loading">
-              <span className="spinner" />
-              Analysing…
-            </span>
-          ) : (
-            <>
-              <span>Run Analysis</span>
-              <span className="btn-arrow">→</span>
-            </>
-          )}
+          {loading
+            ? <span className="btn-loading"><span className="spinner" />Analysing…</span>
+            : <><span>Run Analysis</span><span className="btn-arrow">→</span></>
+          }
         </button>
       </div>
     </form>
