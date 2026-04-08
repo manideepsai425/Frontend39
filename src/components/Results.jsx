@@ -1,32 +1,19 @@
 import React from 'react'
 
-function getRiskLevel(spoilageRisk) {
-  if (spoilageRisk === undefined || spoilageRisk === null) return null
-  const val = typeof spoilageRisk === 'string' ? spoilageRisk.toLowerCase() : ''
-  if (typeof spoilageRisk === 'number') {
-    if (spoilageRisk >= 70) return { level: 'high',   label: 'High Risk',   color: 'risk-high' }
-    if (spoilageRisk >= 40) return { level: 'medium', label: 'Medium Risk', color: 'risk-medium' }
-    return { level: 'low', label: 'Low Risk', color: 'risk-low' }
-  }
-  if (val.includes('high'))                         return { level: 'high',   label: 'High Risk',   color: 'risk-high' }
-  if (val.includes('medium') || val.includes('moderate')) return { level: 'medium', label: 'Medium Risk', color: 'risk-medium' }
-  if (val.includes('low'))                          return { level: 'low',    label: 'Low Risk',    color: 'risk-low' }
-  return { level: 'unknown', label: String(spoilageRisk), color: 'risk-low' }
+function getRisk(label) {
+  if (!label) return null
+  const isHigh = label.toUpperCase().includes('HIGH')
+  return isHigh
+    ? { level: 'high', color: 'risk-high', icon: '🔴' }
+    : { level: 'low',  color: 'risk-low',  icon: '🟢' }
 }
 
-function getGapSentiment(gap) {
-  if (gap === undefined || gap === null) return null
-  const val = typeof gap === 'number' ? gap : parseFloat(gap)
-  if (isNaN(val)) return { label: String(gap), color: 'gap-neutral', icon: '↔' }
-  if (val > 0)  return { label: `+${val.toLocaleString()}`, color: 'gap-surplus', icon: '▲', note: 'Surplus' }
-  if (val < 0)  return { label: val.toLocaleString(),       color: 'gap-deficit', icon: '▼', note: 'Deficit' }
-  return { label: '0', color: 'gap-neutral', icon: '↔', note: 'Balanced' }
-}
-
-function formatValue(val, unit = '') {
-  if (val === undefined || val === null) return '—'
-  if (typeof val === 'number') return `${val.toLocaleString(undefined, { maximumFractionDigits: 2 })}${unit}`
-  return String(val)
+function getGap(val) {
+  if (val === undefined || val === null) return null
+  const n = typeof val === 'number' ? val : parseFloat(val)
+  if (n < 0) return { color: 'gap-deficit', icon: '▼', note: 'Deficit',  display: n.toLocaleString(undefined,{maximumFractionDigits:0}) }
+  if (n > 0) return { color: 'gap-surplus', icon: '▲', note: 'Surplus',  display: `+${n.toLocaleString(undefined,{maximumFractionDigits:0})}` }
+  return       { color: 'gap-neutral', icon: '↔', note: 'Balanced', display: '0' }
 }
 
 export default function Results({ data, error, inputParams }) {
@@ -46,15 +33,8 @@ export default function Results({ data, error, inputParams }) {
 
   if (!data) return null
 
-  // ✅ Correct field names matching backend PredictionResponse schema
-  const demand  = data.predicted_demand
-  const gapVal  = data.predicted_supply_gap
-  const riskRaw = data.spoilage_risk_label        // "HIGH RISK" or "LOW RISK"
-  const riskPct = data.spoilage_risk_probability  // e.g. 73.42 (already %)
-  const alert   = data.alert
-
-  const risk = getRiskLevel(riskPct ?? riskRaw)
-  const gap  = getGapSentiment(gapVal)
+  const gap  = getGap(data.predicted_supply_gap)
+  const risk = getRisk(data.spoilage_risk_label)
 
   return (
     <div className="results-area">
@@ -62,81 +42,74 @@ export default function Results({ data, error, inputParams }) {
         <span className="results-tag">AI Prediction Results</span>
         {inputParams && (
           <p className="results-meta">
-            {inputParams.crop} · {inputParams.region} · {inputParams.season} ·{' '}
-            {inputParams.weather_temp}°C · {inputParams.rainfall_mm}mm
+            {inputParams.crop} · {inputParams.region} · {inputParams.season} · {inputParams.weather_temp}°C · {inputParams.rainfall_mm}mm
           </p>
         )}
       </div>
 
-      {/* Alert banner */}
-      {alert && (
-        <div className="alert-banner">
-          {alert}
+      {data.alert && (
+        <div className={`alert-banner ${data.alert.includes('⚠️') ? 'alert-warn' : 'alert-ok'}`}>
+          {data.alert}
         </div>
       )}
 
       <div className="results-grid">
-        {/* Predicted Demand */}
+        {/* Demand */}
         <div className="result-card demand-card">
-          <div className="card-icon-wrap">
-            <span className="card-icon">📦</span>
-          </div>
+          <div className="card-icon-wrap"><span className="card-icon">📦</span></div>
           <div className="card-content">
             <p className="card-label">Predicted Demand</p>
-            <p className="card-value">{formatValue(demand, ' units')}</p>
-            <p className="card-desc">Estimated market demand for the selected crop and conditions.</p>
+            <p className="card-value">
+              {data.predicted_demand !== undefined
+                ? data.predicted_demand.toLocaleString(undefined,{maximumFractionDigits:0})
+                : '—'}
+              <span className="card-unit"> units</span>
+            </p>
+            <p className="card-desc">Estimated market demand based on crop, region, and environmental conditions.</p>
           </div>
-          <div className="card-bar">
-            <div className="card-bar-fill demand-bar" style={{ width: '70%' }} />
-          </div>
+          <div className="card-bar"><div className="card-bar-fill demand-bar" style={{width:'72%'}} /></div>
         </div>
 
-        {/* Supply-Demand Gap */}
+        {/* Gap */}
         <div className={`result-card gap-card ${gap?.color || ''}`}>
-          <div className="card-icon-wrap">
-            <span className="card-icon">⚖️</span>
-          </div>
+          <div className="card-icon-wrap"><span className="card-icon">⚖️</span></div>
           <div className="card-content">
             <p className="card-label">Supply–Demand Gap</p>
             <p className="card-value gap-value">
-              {gap ? (
-                <>
-                  <span className="gap-icon">{gap.icon}</span>
-                  {gap.label}
-                </>
-              ) : '—'}
+              {gap ? <><span className="gap-icon">{gap.icon}</span>{gap.display}<span className="card-unit"> units</span></> : '—'}
             </p>
-            {gap?.note && <p className="card-badge">{gap.note}</p>}
+            {gap?.note && <span className="card-badge">{gap.note}</span>}
             <p className="card-desc">Difference between projected supply and predicted demand.</p>
           </div>
         </div>
 
-        {/* Spoilage Risk */}
+        {/* Spoilage */}
         <div className={`result-card risk-card ${risk?.color || ''}`}>
-          <div className="card-icon-wrap">
-            <span className="card-icon">
-              {risk?.level === 'high' ? '🔴' : risk?.level === 'medium' ? '🟡' : '🟢'}
-            </span>
-          </div>
+          <div className="card-icon-wrap"><span className="card-icon">{risk?.icon || '🔵'}</span></div>
           <div className="card-content">
             <p className="card-label">Spoilage Risk</p>
-            <p className="card-value">{risk ? risk.label : riskRaw}</p>
-            {riskPct !== undefined && (
-              <p className="card-badge">{riskPct.toFixed(1)}% probability</p>
+            <p className="card-value">{data.spoilage_risk_label || '—'}</p>
+            {data.spoilage_risk_probability !== undefined && (
+              <div className="risk-prob-bar">
+                <div className="risk-prob-track">
+                  <div className={`risk-prob-fill ${risk?.level}`}
+                    style={{width:`${Math.min(data.spoilage_risk_probability,100)}%`}} />
+                </div>
+                <span className="risk-prob-label">{data.spoilage_risk_probability.toFixed(1)}% probability</span>
+              </div>
             )}
-            <p className="card-desc">Likelihood of crop spoilage based on environmental factors.</p>
+            <p className="card-desc">Likelihood of crop spoilage based on weather and logistics factors.</p>
           </div>
-          {risk?.level && (
+          {risk && (
             <div className="risk-indicator">
               <div className={`risk-dot ${risk.level}`} />
-              <div className={`risk-dot ${risk.level === 'medium' || risk.level === 'high' ? risk.level : ''}`} />
+              <div className={`risk-dot ${risk.level === 'high' ? risk.level : ''}`} />
               <div className={`risk-dot ${risk.level === 'high' ? risk.level : ''}`} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Full API response */}
       <details className="raw-response">
         <summary>View full API response</summary>
         <pre>{JSON.stringify(data, null, 2)}</pre>
