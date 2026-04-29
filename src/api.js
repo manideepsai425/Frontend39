@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // ── Base URL ──────────────────────────────────────────────────────────────────
-export const BASE_URL = import.meta.env.VITE_API_URL || 'https://backend39.onrender.com'
+export const BASE_URL = import.meta.env.VITE_API_URL || 'https://backend39-6ict.onrender.com'
 
 const api = axios.create({
   baseURL: BASE_URL,
